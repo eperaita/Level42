@@ -421,7 +421,7 @@ fun LoadingScreen(onTimeout: () -> Unit = {}) {
 
     // TIMEOUT
     LaunchedEffect(Unit) {
-        delay(3000)
+        delay(30000)
         onTimeout()
     }
 
