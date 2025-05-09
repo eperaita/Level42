@@ -3,7 +3,7 @@ package com.example.intrapp
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class UserProfile(
+data class SelectedUserProfile(
     val id: Int,
     val login: String,
     val email: String,
@@ -12,16 +12,15 @@ data class UserProfile(
     var image: Image?,
     val location: String?,
     val wallet: Int,
-
-    var projects: List<Project> = emptyList(), //PROJECTS
-    val cursus_users: List<CursusUser> = emptyList() //SKILLS
+    var projects: List<Project> = emptyList(),
+    val cursus_users: List<CursusUser> = emptyList()
 ) {
     @Serializable
     data class Image(
         val link: String,
     )
 
-    // Lógica para obtener el level del cursus "42cursus" (el de id: 21)
+    // Misma lógica para obtener el level del cursus principal
     val level: Double? = cursus_users
         .firstOrNull { it.cursus.id == 21 }
         ?.level
@@ -37,7 +36,7 @@ data class UserProfile(
     data class Skill(
         val id: Int,
         val name: String,
-        val level: Float  // Nivel viene como float (ej. 7.84)
+        val level: Float
     )
 
     @Serializable
@@ -45,4 +44,6 @@ data class UserProfile(
         val id: Int,
         val name: String
     )
+
+
 }

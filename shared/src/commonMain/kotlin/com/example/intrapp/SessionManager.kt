@@ -1,16 +1,18 @@
 package com.example.intrapp
 
-import com.example.intrapp.UserProfile
-import com.example.intrapp.Project
-
 object SessionManager {
     var access_token: String? = null
     var refresh_token: String? = null
 
-    var userProfile: UserProfile? = null
+    // Datos del usuario autenticado
+    var user_id: Int? = null
+    var user_login: String? = null
+    var user_image_url: String? = null
 
-    var projects: List<Project>? = null
+    // Datos del usuario buscado (incluye projects)
+    var selectedUserProfile: SelectedUserProfile? = null
 
+    // Manejo de errores
     var lastAuthError: String? = null
 
     fun checkLogIn(): Boolean {
@@ -20,7 +22,8 @@ object SessionManager {
     fun clearSession() {
         access_token = null
         refresh_token = null
-        userProfile = null
-        projects = null
+        user_id = null
+        user_login = null
+        selectedUserProfile = null
     }
 }

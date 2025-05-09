@@ -1,13 +1,19 @@
 package com.example.intrapp
 
-import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import com.example.intrapp.BuildKonfig
 
+data class AuthData(
+    val access_token: String,
+    val refresh_token: String,
+    val userId: Int,
+    val userLogin: String,
+    val imageUrl: String
+)
 
 class Api42() {
 
@@ -30,7 +36,7 @@ class Api42() {
     }
 
     // Maneja el callback: intercambia el code por el token y obtiene el perfil
-    suspend fun handleCallback(code: String) {
+    suspend fun handleCallback(code: String): AuthData {
 
         println("[API42] Handlecallback(code: $code)")
 
@@ -40,21 +46,29 @@ class Api42() {
         try {
 
             // Paso 1: Intercambiar el code por el token // Rellena accessToken y refreshToken en SessionManager
-            exchangeCodeForToken(code)
+            val tokens = exchangeCodeForToken(code)
 
-            // Paso 2: Obtener el perfil del usuario // // Rellena Userprofile en SessionManager
-            getProfile()
+            // Paso 2: Obtener info básica del usuario (id y login y avatar)
+            val basicInfo = getBasicUserInfo(tokens.accessToken)
 
+            return AuthData(
+                access_token = tokens.accessToken,
+                refresh_token = tokens.refreshToken,
+                userId = basicInfo.id,
+                userLogin = basicInfo.login,
+                imageUrl = basicInfo.imageUrl
+            )
 
         } catch (e: Exception) {
             println("[API42] Error en handleCallback: ${e.message}")
+            SessionManager.clearSession()
             throw e
         }
     }
 
 
     // Intercambia el code por el token de acceso
-    private suspend fun exchangeCodeForToken(code: String) {
+    private suspend fun exchangeCodeForToken(code: String) :Tokens {
         val url = "https://api.intra.42.fr/oauth/token"
         val body = "grant_type=authorization_code" +
                 "&client_id=$client_id" +
@@ -67,23 +81,28 @@ class Api42() {
 
         val response = ApiClient().post(url, body)
         println("[API42] exchangeCodeForToken() RESPONSE: ${response?.status?.value}")
+        println("[API42] exchangeCodeForToken() JSON: ${response?.bodyAsText()}")
 
         if (response?.status?.value == 200) {
-            val bodyText = response.bodyAsText()
-            val jsonObject = Json.parseToJsonElement(bodyText).jsonObject
+            val json = Json.parseToJsonElement(response.bodyAsText()).jsonObject
+            val accessToken = json["access_token"]?.jsonPrimitive?.content
+                ?: throw Exception("Access token no encontrado")
+            val refreshToken = json["refresh_token"]?.jsonPrimitive?.content
+                ?: throw Exception("Refresh token no encontrado")
 
-            // Almacenar tokens en SessionManager
-            SessionManager.access_token = jsonObject["access_token"]?.toString()?.replace("\"", "")
-            SessionManager.refresh_token =
-                jsonObject["refresh_token"]?.toString()?.replace("\"", "")
+            // Guardar tokens en Sessionamanager
+            SessionManager.access_token = accessToken
+            SessionManager.refresh_token = refreshToken
 
-            println("[API42]exchangeCodeForToken() = Access Token: ${SessionManager.access_token}")
-            println("[API42]exchangeCodeForToken() = Refresh Token: ${SessionManager.refresh_token}")
+            return Tokens(accessToken, refreshToken)
 
         } else {
             throw Exception("Código de error ${response?.status?.value}")
         }
     }
+
+    private data class Tokens(val accessToken: String, val refreshToken: String)
+
 
     // Función wrapper para Swift que llama a HandleCallback
     @Throws(Throwable::class)
@@ -99,102 +118,116 @@ class Api42() {
         }
     }
 
-    suspend fun getProfile() {
+    private suspend fun getBasicUserInfo(accessToken: String): BasicUserInfo {
+        val response = ApiClient().getWithAuth(
+            url = "https://api.intra.42.fr/v2/me",
+            headers = mapOf("Authorization" to "Bearer $accessToken"),
+            api42 = this
+        ) ?: throw Exception("No se pudo conectar al servidor")
 
-        val token = SessionManager.access_token ?: throw Exception("Access token no disponible")
-
-        val response: HttpResponse? =
-            ApiClient().getWithAuth(
-                url = "https://api.intra.42.fr/v2/me",
-                headers = emptyMap(),
-                api42 = this // Pasar la instancia actual de Api42
-            )
-        if (response == null || response.status.value != 200) {
-            throw Exception("Error: No se pudo obtener el perfil")
+        if (response.status.value != 200) {
+            throw Exception("Error obteniendo info de usuario")
         }
 
-        // Parsear el JSON a UserProfile
-        val profileJson = response.bodyAsText()
-        println("[API42] getProfile() = USER PROFILE JSON: $profileJson")
+        val responseText = response.bodyAsText()
+        val json = Json.parseToJsonElement(responseText).jsonObject
 
-        //Parsear a modelo de datos tipo UseProfile y Almacenar en SessionManager
+        return BasicUserInfo(
+            id = json["id"]?.jsonPrimitive?.int?: throw Exception("Campo 'id' no encontrado o inválido"),
+            login = json["login"]?.jsonPrimitive?.content ?: throw Exception("Campo 'login' no encontrado o inválido"),
+            imageUrl = json["image"]?.jsonObject?.get("link")?.jsonPrimitive?.content ?: "https://cdn.intra.42.fr/users/${json["login"]?.jsonPrimitive?.content}.jpg"
 
-        val userProfile = Json {
-            ignoreUnknownKeys = true
-        }.decodeFromString<UserProfile>(profileJson) // Ignora las claves que no están en el modelo
-        SessionManager.userProfile = userProfile
-
-        //println("[API42] getProfile() : USER PROFILE MODEL: ${SessionManager.userProfile?.id}, ${SessionManager.userProfile?.login}, ${SessionManager.userProfile?.email}, ${SessionManager.userProfile?.location}, ${SessionManager.userProfile?.wallet}\")")
-
+        )
     }
 
-    // Función wrapper para Swift que llama a getProfile
+    private data class BasicUserInfo(val id: Int, val login: String, val imageUrl: String)
+
+    suspend fun searchUser(login: String): SelectedUserProfile {
+        val url = "https://api.intra.42.fr/v2/users?filter[login]=${login.trim()}"
+
+        println("[API42] SEARCHING FOR LOGIN $login")
+        val response = ApiClient().getWithAuth(
+            url = url,
+            headers = emptyMap(),
+            api42 = this
+        ) ?: throw Exception("No se pudo conectar al servidor")
+
+        // Primera llamada para obtener el ID del usuario
+        val basicProfile = when (response.status.value) {
+            200 -> {
+                val usersJson = response.bodyAsText()
+                println("[API42] JSON FOR LOGIN $login: ${response.bodyAsText()}")
+                Json { ignoreUnknownKeys = true }
+                    .decodeFromString<List<SelectedUserProfile>>(usersJson)
+                    .firstOrNull() ?: throw UserNotFoundException()
+            }
+            401 -> throw Exception("Token no válido")
+            404 -> throw UserNotFoundException()
+            else -> throw Exception("Error en la búsqueda: ${response.status.value}")
+        }
+
+        // Ahora que tenemos el ID, hacemos la segunda llamada para obtener el perfil detallado
+        val userId = basicProfile.id
+        val detailUrl = "https://api.intra.42.fr/v2/users/$userId"
+
+        println("[API42] OBTENIENDO PERFIL DETALLADO PARA ID $userId")
+        val detailResponse = ApiClient().getWithAuth(
+            url = detailUrl,
+            headers = emptyMap(),
+            api42 = this
+        ) ?: throw Exception("No se pudo conectar al servidor")
+
+        if (detailResponse.status.value != 200) {
+            throw Exception("Error obteniendo perfil detallado: ${detailResponse.status.value}")
+        }
+
+        val detailJson = detailResponse.bodyAsText()
+        println("[API42] JSON DETALLADO PARA ID $userId: ${detailJson}")
+
+        // Parsear el perfil detallado
+        return Json { ignoreUnknownKeys = true }
+            .decodeFromString<SelectedUserProfile>(detailJson)
+    }
+
+    // Clase de excepción personalizada
+    class UserNotFoundException : Exception("Usuario no encontrado")
+
+    // Wrapper para Swift/Kotlin Native
     @Throws(Throwable::class)
-    fun getProfileWrapper() {
-        return runBlocking {
-            try {
-                getProfile()
-            } catch (e: Exception) {
-                // Limpiar el perfil en caso de error
-                SessionManager.userProfile = null
-                throw e
-            }
-        }
+    fun searchUserWrapper(login: String): SelectedUserProfile = runBlocking {
+        searchUser(login)
     }
 
-    suspend fun getProjects() {
+    suspend fun getProjectsForUser(login: String): List<Project> {
+        val url = "https://api.intra.42.fr/v2/users/$login/projects_users"
+        val response = ApiClient().getWithAuth(
+            url = url,
+            headers = emptyMap(),
+            api42 = this
+        ) ?: throw Exception("No se pudo conectar al servidor")
 
-        try {
-            // Verificar que el accessToken y el userProfile estén disponibles
-            val token = SessionManager.access_token ?: throw Exception("Access token no disponible")
-            val userId = SessionManager.userProfile?.id ?: throw Exception("User ID no disponible")
-
-            // Hacer la solicitud a la API
-            val response: HttpResponse? = ApiClient().getWithAuth(
-                url = "https://api.intra.42.fr/v2/users/$userId/projects_users",
-                headers = emptyMap(),
-                api42 = this // Pasar la instancia actual de Api42
-            )
-
-            // Verificar la respuesta
-            if (response == null || response.status.value != 200) {
-                throw Exception("Error: No se pudieron obtener los proyectos (código de estado ${response?.status?.value})")
-            }
-
-            // Parsear el JSON a List<Project>
-            val projectsJson = response.bodyAsText()
-            println("[API42] getprojects() PROJECTS JSON: $projectsJson")
-            // Extraer solo los campos necesarios
-            val projects =
-                Json { ignoreUnknownKeys = true }.decodeFromString<List<Project>>(projectsJson)
-
-            // Almacenar los proyectos en SessionManager - Userprofile - Projects
-            SessionManager.userProfile?.projects = projects
-
-            println("[API42] Proyectos cargados: ${projects.size}")
-
-        } catch (e: Exception) {
-            // Limpiar los proyectos en caso de error
-            SessionManager.userProfile?.projects = emptyList()
-
-            println("[API42] Proyectos no cargados : ${e.message}")
-            throw Exception("Error en getProjects: ${e.message}", e)
+        if (response.status.value != 200) {
+            throw Exception("Error obteniendo proyectos: ${response.status.value}")
         }
+
+        return Json { ignoreUnknownKeys = true }
+            .decodeFromString<List<Project>>(response.bodyAsText())
     }
+
 
     // Función wrapper para Swift que llama a HandleCallback
     @Throws(Throwable::class)
-    fun getProjectsWrapper() {
+    fun getProjectsWrapper(login: String) {
         return runBlocking {
             try {
-                getProjects()
+                getProjectsForUser(login)
             } catch (e: Exception) {
-                SessionManager.userProfile?.projects =
-                    emptyList() //Limpiar projects en caso de error
                 throw e
             }
         }
     }
+
+    ////////////////////////////////////////////////////////////////////////
 
     suspend fun refreshToken(): Boolean {
         val refreshToken = SessionManager.refresh_token ?: return false

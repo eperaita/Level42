@@ -24,23 +24,31 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Observa los errores de autenticación
+        // Observar estados del ViewModel
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.authError.collect { error ->
-                    error?.let {
-                        Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show()
-                        viewModel.clearAuthError()
+                launch {
+                    viewModel.authState.collect { state ->
+                        when (state) {
+                            is ProfileViewModel.AuthState.Error -> {
+                                SessionManager.lastAuthError = state.message
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    state.message,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            else -> {}
+                        }
                     }
                 }
             }
         }
 
 
-
-        // Configuración inicial de la UI
+        // Configuración de la UI
         setContent {
-            App(viewModel) // Pasa viewModel a App
+            App(viewModel)
         }
 
         // Recoge los intent de Deep Link
@@ -65,16 +73,19 @@ class MainActivity : ComponentActivity() {
             uri.getQueryParameter("error") != null -> {
                 val error = uri.getQueryParameter("error_description") ?: "Error desconocido"
                 Log.e("OAUTH_ERROR", "$error")
-
-
-                return
+                SessionManager.lastAuthError = error
             }
-
             uri.getQueryParameter("code") != null -> {
-                // 200 -  extrae CODE y lo manda a VIEWMODEL
                 val code = uri.getQueryParameter("code")!!
                 Log.d("AuthIntra", "Authorization code received: $code")
-                viewModel.handleAuthCallback(code)
+                lifecycleScope.launch {
+                    try {
+                        viewModel.handleAuthCallback(code)
+                    } catch (e: Exception) {
+                        SessionManager.lastAuthError = e.message
+                        Log.e("AuthIntra", "Error handling callback", e)
+                    }
+                }
             }
         }
         this.intent = Intent()
