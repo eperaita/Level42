@@ -4,145 +4,129 @@ import shared
 struct ProfileView: View {
     @EnvironmentObject private var viewModel: ProfileViewModel
     @Binding var navigationPath: NavigationPath
-    let profile = SessionManager.shared.userProfile
+    
+    var body: some View {
+        // Protección contra perfil nulo
+        if SessionManager.shared.selectedUserProfile == nil {
+            EmptyView()
+                .onAppear {
+                    navigationPath.removeLast(navigationPath.count)
+                    navigationPath.append("login")
+                }
+        } else {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                UserProfileContent(
+                    user: SessionManager.shared.selectedUserProfile!,
+                    navigationPath: $navigationPath,
+                    viewModel: viewModel
+                )
+                
+                ButtonBack(action: {
+                    viewModel.clearSearch()
+                    navigationPath.append("welcome")
+                })
+                .position(x: 30, y: 50)
+            }
+            .edgesIgnoringSafeArea(.all)
+            .navigationBarBackButtonHidden(true)
+            .navigationBarHidden(true)
+        }
+    }
+}
 
-    private let customYellow = Color(red: 1.0, green: 0.988, blue: 0.0)
-    private let customBlack = Color.black
-
+// Componente reutilizable
+private struct UserProfileContent: View {
+    let user: SelectedUserProfile
+    @Binding var navigationPath: NavigationPath
+    @ObservedObject var viewModel: ProfileViewModel
+    
     // Styles
+    private let customYellow = Color(red: 1.0, green: 0.988, blue: 0.0)
     private let avatarSize: CGFloat = 220
     private let buttonHeight: CGFloat = 50
-    private let logoutButtonSize: CGFloat = 100
     private let horizontalPadding: CGFloat = 40
-    private let buttonSpacing: CGFloat = 40
-
+    
     var body: some View {
-
-    // Protección contra perfil nulo
-    if SessionManager.shared.userProfile == nil {
-        EmptyView()
-            .onAppear {
-                navigationPath.removeLast(navigationPath.count)
-                navigationPath.append("login")
-            }
-    } else {
-        ZStack {
-            customBlack.ignoresSafeArea()
-
-            GeometryReader { geometry in
-                    VStack(spacing: 0) {
-                        //  AVATAR
-                        VStack {
-                            ZStack {
-                                Circle()
-                                    .fill(customYellow)
-                                    .frame(width: avatarSize, height: avatarSize)
-
-                                if let imageUrl = profile?.image?.link, let url = URL(string: imageUrl) {
-                                    AsyncImage(url: url) { phase in
-                                        if case .success(let image) = phase {
-                                            image
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: avatarSize, height: avatarSize)
-                                                .clipShape(Circle())
-                                        } else {
-                                            Circle().fill(Color.gray)
-                                        }
-                                    }
+        GeometryReader { geometry in
+            VStack(spacing: 0) {
+                // AVATAR
+                VStack {
+                    ZStack {
+                        Circle()
+                            .fill(customYellow)
+                            .frame(width: avatarSize, height: avatarSize)
+                        
+                        if let imageUrl = user.image?.link, let url = URL(string: imageUrl) {
+                            AsyncImage(url: url) { phase in
+                                if case .success(let image) = phase {
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: avatarSize, height: avatarSize)
+                                        .clipShape(Circle())
                                 } else {
                                     Circle().fill(Color.gray)
                                 }
                             }
-                            .padding(.top, 90)
-                            .padding(.bottom, 30)
+                        } else {
+                            Circle().fill(Color.gray)
                         }
-                        .padding(.top, UIApplication.shared.windows.first?.safeAreaInsets.top ?? 0)
-                        .padding(.bottom, 30)
-
-                        //  INFO
-                        VStack(spacing: 12) {
-                            if let profile = profile {
-                                Text(profile.login)
-                                    .font(.system(size: 22, weight: .bold))
-                                    .padding(.bottom, 4)
-
-                                Text("\(profile.first_name ?? "") \(profile.last_name ?? "")")
-                                    .font(.system(size: 16))
-
-                                Text("email: \(profile.email)")
-                                    .font(.system(size: 16))
-
-                                Text("Level: \(profile.level ?? 0)")
-                                    .font(.system(size: 16))
-
-                                Text("Wallet: \(profile.wallet ?? 0)")
-                                    .font(.system(size: 16))
-                            }
-                        }
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 50)
-
-
-                        // BOTONES
-                        VStack(spacing: 30) {
-                            customButton(
-                                title: "PROJECTS",
-                                action: {
-                                    viewModel.loadProjects()
-                                    navigationPath.append("projects")
-                                }
-                            )
-
-                            customButton(
-                                title: "SKILLS",
-                                action: {
-                                    navigationPath.append("skills")
-                                }
-                            )
-
-
-
-                            // Botón LOGOUT
-                            Button(action: {
-                                // 1. Resetear ViewModel
-                                    viewModel.profileLoaded = false
-
-                                    // 2. Limpiar sesión
-                                    SessionManager.shared.clearSession()
-
-                                    // 3. Navegar a login
-                                    navigationPath.removeLast(navigationPath.count)
-                                    navigationPath.append("login")
-                            }) {
-                                Text("LOG OUT")
-                                    .font(.system(size: 16, weight: .black))
-                                    .frame(width: logoutButtonSize, height: logoutButtonSize)
-                                    .background(customYellow)
-                                    .clipShape(Circle())
-                                    .overlay(
-                                        Circle()
-                                            .stroke(customBlack, lineWidth: 2)
-                                    )
-                            }
-                            .foregroundColor(customBlack)
-                            .padding(.bottom, 30)
-                        }
-                        .padding(.horizontal,40)
-                        .padding(.bottom, 50)
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .padding(.top, 90)
+                    .padding(.bottom, 30)
                 }
+                .padding(.top, UIApplication.shared.windows.first?.safeAreaInsets.top ?? 0)
+                .padding(.bottom, 30)
+                
+                // INFO
+                VStack(spacing: 12) {
+                    Text(user.login)
+                        .font(.system(size: 22, weight: .bold))
+                        .padding(.bottom, 4)
+                    
+                    Text("\(user.first_name ?? "") \(user.last_name ?? "")")
+                        .font(.system(size: 16))
+                    
+                    Text("email: \(user.email)")
+                        .font(.system(size: 16))
+                    
+                    Text("Level: \(user.level ?? 0)")
+                        .font(.system(size: 16))
+                    
+                    Text("Wallet: \(user.wallet)")
+                        .font(.system(size: 16))
+                }
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 50)
+                
+                // BOTONES
+                VStack(spacing: 30) {
+                    customButton(
+                        title: "PROJECTS",
+                        action: {
+                            viewModel.loadProjectsForUser(login: user.login)
+                            navigationPath.append("projects")
+                        }
+                    )
+                    
+                    customButton(
+                        title: "SKILLS",
+                        action: {
+                            navigationPath.append("skills")
+                        }
+                    )
+                }
+                .padding(.horizontal, horizontalPadding)
+                .padding(.bottom, 50)
             }
-        .edgesIgnoringSafeArea(.all)
-        .navigationBarBackButtonHidden(true)
-        .navigationBarHidden(true)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
-
-    // Función para botones custom
+    
     private func customButton(title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -156,6 +140,21 @@ struct ProfileView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(customYellow, lineWidth: 2)
                 )
+        }
+    }
+}
+
+// Componente ButtonBack (debe estar en otro archivo para reutilizar)
+struct ButtonBack: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .foregroundColor(Color(red: 1.0, green: 0.988, blue: 0.0))
+                .padding()
+                .background(Color.black)
+                .clipShape(Circle())
         }
     }
 }

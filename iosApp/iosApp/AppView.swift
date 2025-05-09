@@ -1,20 +1,12 @@
 import SwiftUI
 
-//lista de pantallas (o rutas) como NavHost
-enum Route: Hashable {
-    case login
-    case loading
-    case profile
-    case projects
-}
-
 struct AppView: View {
 
     // 1. Crear NavigationPath // Pila de navegación en SwiftUI que almacena el estado de navegacion y e historial
     @State private var navigationPath = NavigationPath()
 
     // 2. Obtener el ViewModel: (se inyecta en el entorno usando @EnvironmentObject)
-    @EnvironmentObject private var viewModel: ProfileViewModel
+    @StateObject var viewModel = ProfileViewModel()
 
     // 3. Las variables a observar no hace falta declararlas.
     // Con @Published  SwiftUI actualiza automáticamente las vistas que dependen de él.
@@ -22,72 +14,94 @@ struct AppView: View {
     var body: some View {
 
         //4. COnfigurar NavigationStack (Como NavHost)
-        // Es más moderno y flexible q NavigationView y Necesario para poder gestionar loading (eliminarla cuando carga profile)
-        //Cada vista recibe navigationPath como @Binding, lo que le permite navegar a otra pantalla o retroceder
-        NavigationStack(path: $navigationPath) {
 
-                    VStack { LoginView(navigationPath: $navigationPath) } // Pantalla default LoginView
-                    .navigationDestination(for: String.self) { route in
-                        switch route {
-                        case "loading":
-                            LoadingView(navigationPath: $navigationPath)
-                        case "profile":
-                            ProfileView(navigationPath: $navigationPath)
-                        case "projects":
-                            ProjectsView(navigationPath: $navigationPath)
-                        case "skills":
-                            SkillsView(navigationPath: $navigationPath)
-                        default:
-                            LoginView(navigationPath: $navigationPath)
-                        }
-                    }
+        //Cada vista recibe navigationPath como @Binding, lo que le permite navegar a otra pantalla o retroceder
+        NavigationStack(path: $navigationPath) { LoginView(navigationPath: $navigationPath)
+            .navigationDestination(for: String.self) { route in
+                switch route {
+                case "loading":
+                    LoadingView(navigationPath: $navigationPath)
+                case "welcome":
+                    WelcomeView(navigationPath: $navigationPath)
+                case "profile":
+                    ProfileView(navigationPath: $navigationPath)
+                case "projects":
+                    ProjectsView(navigationPath: $navigationPath)
+                case "skills":
+                    SkillsView(navigationPath: $navigationPath)
+                default:
+                    LoginView(navigationPath: $navigationPath)
                 }
-                //Esto es para recoger el callback  - en Android lo recoge Mainactivity
-                .onOpenURL { url in handleIncomingURL(url) }
-                //5. Navegar entre pantallas
-                .onChange(of: viewModel.profileLoaded) { newValue in
-                    DispatchQueue.main.async {
-                        if newValue {
-                            navigationPath.removeLast(navigationPath.count)
-                            navigationPath.append("profile")
-                        } else if navigationPath.count > 0 { // Solo si no está vacío
-                            navigationPath.removeLast(navigationPath.count)
-                            navigationPath.append("login")
-                        }
-                    }
-                }
-                .onChange(of: viewModel.authError) { error in
-                            if error != nil {
-                                navigationPath.removeLast(navigationPath.count)
-                                navigationPath.append("login")
-                            }
-                }
-                .alert("Error de autenticación", isPresented: Binding<Bool>(
-                     get: { viewModel.authError != nil },
-                     set: { _ in viewModel.authError = nil }
-                )) {
-                     Button("OK", role: .cancel) { }
-                } message: {
-                     Text(viewModel.authError ?? "Error desconocido")
-                }
+            }
+        }
+        //Esto es para recoger el callback  - en Android lo recoge Mainactivity
+        .onOpenURL { url in handleIncomingURL(url) }
+        
+        //5. Navegar entre pantallas
+        .onChange(of: viewModel.authState) { newState in
+            handleAuthStateChange(newState)
+        }
+        .onChange(of: viewModel.searchState) { newState in
+            handleSearchStateChange(newState)
+        }
+        //Pop up error en inicio sesion
+        .alert("Error",isPresented: .constant(viewModel.authState.isError),
+           actions: { Button("OK") { viewModel.clearAuthError() } },
+           message: {
+               if case let .error(message) = viewModel.authState {
+                   Text(message)
+               }
+           })
     }
 
     func handleIncomingURL(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
-            print("No se encontró el code en la URL")
-            viewModel.authError = "URL de callback inválida"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-               viewModel.authError = nil
-            }
+            
+            viewModel.authState = .error(message: "URL de callback inválida")
             return
         }
         viewModel.handleAuthCallback(code: code)
     }
+    
+    // --- Funciones manejadoras  ---
+    private func handleAuthStateChange(_ state: ProfileViewModel.AuthState) {
+        DispatchQueue.main.async {
+            switch state {
+            case .success:
+                navigationPath.removeLast(navigationPath.count)
+                navigationPath.append("welcome")
+            case .error(let message):
+                print("Auth error: \(message)")
+                navigationPath.removeLast(navigationPath.count)
+                navigationPath.append("login")
+            default:
+                break
+            }
+        }
+    }
+    
+    private func handleSearchStateChange(_ state: ProfileViewModel.SearchState) {
+        DispatchQueue.main.async {
+            if case .success = state {
+                navigationPath.append("profile")
+            }
+        }
+    }
 }
 
-struct ContentView_Previews: PreviewProvider {
+
+struct AppView_Previews: PreviewProvider {  // <<- ¡Nombre cambiado a AppView_Previews!
     static var previews: some View {
         AppView()
+    }
+}
+
+
+// Extensión para verificar errores
+extension ProfileViewModel.AuthState {
+    var isError: Bool {
+        if case .error = self { return true }
+        return false
     }
 }

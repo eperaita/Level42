@@ -12,7 +12,7 @@ struct SkillsView: View {
             customYellow.edgesIgnoringSafeArea(.all)
             
             // Contenido principal
-            if let profile = SessionManager.shared.userProfile {
+            if let profile = SessionManager.shared.selectedUserProfile {
                 if let skills = profile.cursus_users.first(where: { $0.cursus.id == 21 })?.skills,
                    !skills.isEmpty {
                     VStack {

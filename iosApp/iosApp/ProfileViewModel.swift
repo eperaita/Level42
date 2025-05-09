@@ -2,87 +2,166 @@ import SwiftUI
 import shared
 
 class ProfileViewModel: ObservableObject {
-
+    
     // Estados
-    @Published var profileLoaded: Bool = false
-    @Published var projectsLoaded: Bool = false
-    @Published var projects: [Project] = []
-    @Published var userProfile: UserProfile?
-    @Published var authError: String? = nil
+    @Published var authState: AuthState = .idle
+    @Published var searchState: SearchState = .idle
+    @Published var projectsState: ProjectsState = .idle
+    
+    enum AuthState : Equatable {
+        case idle
+        case loading
+        case success(authData: AuthData)
+        case error(message: String)
+    }
+    
+    enum SearchState: Equatable  {
+        case idle
+        case loading
+        case success(user: SelectedUserProfile)
+        case error(message: String)
+    }
+    
+    enum ProjectsState: Equatable  {
+        case idle
+        case loading
+        case success(projects: [Project])
+        case error(message: String)
+    }
 
     // Función para manejar el callback de OAuth
     func handleAuthCallback(code: String) {
-            DispatchQueue.global().async {
-                do {
-                    try Api42().handleCallbackWrapper(code: code)
-                    DispatchQueue.main.async {
-                        self.profileLoaded = true
-                        self.authError = nil
-                    }
-                } catch {
-                    print("Error handling auth callback: \(error)")
-                    DispatchQueue.main.async {
-                        self.profileLoaded = false
-                        self.authError = error.localizedDescription
-                        // Limpiar el error después de 3 segundos
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                           self.authError = nil
-                        }
-
-                    }
+        DispatchQueue.global().async {
+            do {
+                print("[VIEWMODEL] Code: \(code)")
+                self.updateAuthState(.loading)
+                
+                let authData = try Api42().handleCallbackWrapper(code: code)
+                
+                DispatchQueue.main.async {
+                    // Acceso CORRECTO a las propiedades (snake_case igual que en Kotlin)
+                    SessionManager.shared.access_token = authData.access_token
+                    SessionManager.shared.refresh_token = authData.refresh_token
+                    SessionManager.shared.user_id = authData.userId as? KotlinInt // userId es Int en Kotlin
+                    SessionManager.shared.user_login = authData.userLogin
+                    SessionManager.shared.user_image_url = authData.imageUrl
+                                    
+                    self.updateAuthState(.success(authData: authData))
+                                    
+                    print("[VIEWMODEL]: Logged as: \(SessionManager.shared.user_login ?? ""), id: \(SessionManager.shared.user_id ?? 0)")
                 }
+                
+            } catch {
+                print("[VIEWMODEL] Auth error: \(error)")
+                self.updateAuthState(.error(message: error.localizedDescription))
+                SessionManager.shared.clearSession()
             }
         }
-
-    func loadProjects() {
-
-        // si ya hay proyectos cargados (sincrónico)
-        if let cachedProjects = SessionManager.shared.userProfile?.projects,
-           !cachedProjects.isEmpty {
-            DispatchQueue.main.async {
-                self.projects = cachedProjects
-                self.projectsLoaded = true
+    }
+        
+    func searchForUser(login: String) {
+        DispatchQueue.global().async {
+            do {
+                self.updateSearchState(.loading)
+                print("[VIEWMODEL] Searching for login: \(login)")
+                
+                let user = try Api42().searchUserWrapper(login: login)
+                SessionManager.shared.selectedUserProfile = user
+                
+                DispatchQueue.main.async {
+                    self.updateSearchState(.success(user: user))
+                    print("[VIEWMODEL] User found: \(user.login)")
+                }
+            } catch let error as Api42.UserNotFoundException {
+                self.updateSearchState(.error(message: "Usuario no encontrado"))
+            } catch {
+                self.updateSearchState(.error(message: error.localizedDescription))
             }
-            return
         }
-        // 2. Si no, llama a la API en background
-        DispatchQueue.main.async { //  Asegura ejecución en hilo principal
-            Task {
-                do {
-                    try await Api42().getProjectsWrapper()
+    }
 
-                    if let userProfile = SessionManager.shared.userProfile {
-                        self.projects = userProfile.projects
-                        self.projectsLoaded = true
+    func loadProjectsForUser(login: String) {
+        DispatchQueue.global().async {
+            do {
+                self.updateProjectsState(.loading)
+                print("[VIEWMODEL] Loading projects for: \(login)")
+                
+                let projects = try Api42().getProjectsWrapper(login: login)
+                
+                DispatchQueue.main.async {
+                    if var selectedUser = SessionManager.shared.selectedUserProfile {
+                        selectedUser.projects = projects
+                        SessionManager.shared.selectedUserProfile = selectedUser
                     }
-                } catch {
-                    print("Error al cargar proyectos: \(error.localizedDescription)")
-
-                    // Intentar refrescar el token si el error es 401
-                    if error.localizedDescription.contains("401") {
-                        do {
-                            let refreshSuccess = try await Api42().refreshTokenWrapper()
-                            if refreshSuccess.boolValue {
-                                // Reintentar después de refrescar
-                                try await Api42().getProjectsWrapper()
-                                if let userProfile = SessionManager.shared.userProfile {
-                                    self.projects = userProfile.projects
-                                    self.projectsLoaded = true
-                                    return
-                                }
-                            }
-                        } catch {
-                            print("Error al refrescar token: \(error.localizedDescription)")
-                        }
-                    }
-
-                    self.projectsLoaded = false
-                    self.projects = []
+                    self.updateProjectsState(.success(projects: projects))
+                    print("[VIEWMODEL] Projects loaded: \(projects.count)")
+                }
+            } catch {
+                print("[VIEWMODEL] Projects error: \(error)")
+                self.updateProjectsState(.error(message: error.localizedDescription))
+                
+                if error.localizedDescription.contains("401") {
+                    self.refreshTokenAndRetry(login: login)
                 }
             }
         }
     }
+        
+    private func refreshTokenAndRetry(login: String) {
+        Task {
+            do {
+                let success = try await Api42().refreshTokenWrapper()
+                if success as! Bool {
+                    DispatchQueue.main.async {
+                        self.loadProjectsForUser(login: login)
+                    }
+                }
+            } catch {
+                print("[VIEWMODEL] Token refresh failed: \(error)")
+            }
+        }
+    }
+    
+    // MARK: - State Management
+        
+    private func updateAuthState(_ state: AuthState) {
+        DispatchQueue.main.async {
+            self.authState = state
+        }
+    }
+    
+    private func updateSearchState(_ state: SearchState) {
+        DispatchQueue.main.async {
+            self.searchState = state
+        }
+    }
+    
+    private func updateProjectsState(_ state: ProjectsState) {
+        DispatchQueue.main.async {
+            self.projectsState = state
+        }
+    }
+    
+    func resetState() {
+        DispatchQueue.main.async {
+            self.authState = .idle
+            self.searchState = .idle
+            self.projectsState = .idle
+        }
+    }
+    
+    func clearSearch() {
+        DispatchQueue.main.async {
+            SessionManager.shared.selectedUserProfile = nil
+            self.searchState = .idle
+        }
+    }
+    
+    func clearAuthError() {
+        DispatchQueue.main.async {
+            if case .error = self.authState {
+                self.authState = .idle
+            }
+        }
+    }
 }
-
-
-

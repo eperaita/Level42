@@ -106,16 +106,8 @@ class Api42() {
 
     // Función wrapper para Swift que llama a HandleCallback
     @Throws(Throwable::class)
-    fun handleCallbackWrapper(code: String) {
-        return runBlocking {
-            try {
-                handleCallback(code)
-            } catch (e: Exception) {
-                // Limpiar el estado en caso de error (Session manager)
-                SessionManager.clearSession()
-                throw e
-            }
-        }
+    fun handleCallbackWrapper(code: String): AuthData = runBlocking {
+        handleCallback(code)
     }
 
     private suspend fun getBasicUserInfo(accessToken: String): BasicUserInfo {
@@ -217,14 +209,8 @@ class Api42() {
 
     // Función wrapper para Swift que llama a HandleCallback
     @Throws(Throwable::class)
-    fun getProjectsWrapper(login: String) {
-        return runBlocking {
-            try {
-                getProjectsForUser(login)
-            } catch (e: Exception) {
-                throw e
-            }
-        }
+    fun getProjectsWrapper(login: String): List<Project> = runBlocking {
+        getProjectsForUser(login)
     }
 
     ////////////////////////////////////////////////////////////////////////
@@ -244,13 +230,9 @@ class Api42() {
         return false
     }
 
-    @Throws(Exception::class)
+    @Throws(Throwable::class)
     suspend fun refreshTokenWrapper(): Boolean {
-        return try {
-            refreshToken()
-        } catch (e: Exception) {
-            false
-        }
+        return refreshToken()
     }
 }
 
