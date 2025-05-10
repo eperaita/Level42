@@ -56,7 +56,7 @@ class ProfileViewModel : ViewModel() {
                 // Indicar que la autenticación fue exitosa
                 _authState.value = AuthState.Success(authData)
 
-                println("[VIEWMODEL]: Logged as : ${SessionManager.user_login}, id: ${SessionManager.user_id}")
+                println("[VIEWMODEL]:handlecallback() =  Authdata for : ${SessionManager.user_login}, id: ${SessionManager.user_id}")
                 println("[VM]handlecallback() = Image link: ${SessionManager.user_image_url}")
                 println("[VM]handlecallback() = Access Token: ${SessionManager.access_token}")
                 println("[VM]handlecallback() = Refresh Token: ${SessionManager.refresh_token}")

@@ -80,6 +80,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.intrapp.SelectedUserProfile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 //-------------------------//APP NAVEGADOR//---------------------------//
 
@@ -118,6 +121,11 @@ fun App(viewModel: ProfileViewModel) {
             is ProfileViewModel.SearchState.Success -> {
                 navController.navigate("profile")
             }
+            is ProfileViewModel.SearchState.Error -> {
+                navController.navigate("user_not_found") {
+                    popUpTo("welcome") { inclusive = false }
+                }
+            }
             else -> {}
         }
     }
@@ -152,6 +160,9 @@ fun App(viewModel: ProfileViewModel) {
         }
         composable("skills") {
             SkillsScreen(navController = navController, viewModel = viewModel<ProfileViewModel>())
+        }
+        composable("user_not_found") {
+            UserNotFoundScreen(navController, viewModel)
         }
     }
 }
@@ -416,10 +427,11 @@ fun ProfileScreen(navController: NavController, viewModel: ProfileViewModel) {
             ButtonBack(
                 navController = navController,
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                    .align(Alignment.TopStart)
+                    .padding(top = 50.dp, start = 16.dp),
                 onBackClick = {
                     viewModel.clearSearch()
+                    SessionManager.selectedUserProfile = null
                     navController.navigate("welcome") {
                         popUpTo("welcome") { inclusive = true }
                     }
@@ -594,26 +606,34 @@ fun ProjectsScreen(navController: NavController, viewModel: ProfileViewModel) {
     var isLoading by remember { mutableStateOf(true) }
     var showError by remember { mutableStateOf(false) }
     var isFullyVisible by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
 
     // Obtener los proyectos desde el usuario seleccionado
     val projects = SessionManager.selectedUserProfile?.projects ?: emptyList()
 
 
-    // Efecto para cargar proyectos si no existen
+    // 1. Cargar proyectos si no existen
     LaunchedEffect(Unit) {
-        delay(100) // Pequeño delay para animación
-        isFullyVisible = true
-
         if (projects.isEmpty()) {
             try {
                 viewModel.loadProjectsForUser(SessionManager.selectedUserProfile?.login ?: "")
-                isLoading = false
             } catch (e: Exception) {
                 showError = true
+            } finally {
                 isLoading = false
+                delay(150) // Pequeño delay para sincronización UI
+                isFullyVisible = true
             }
         } else {
             isLoading = false
+            isFullyVisible = true
+        }
+    }
+
+    // 2. Scroll inicial cuando todo esté listo
+    LaunchedEffect(isFullyVisible, projects) {
+        if (isFullyVisible && projects.isNotEmpty()) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -703,8 +723,18 @@ fun SelectedProjectScreen(
     navController: NavController,
     projectId: Int // ID del proyecto seleccionado
 ) {
+    // 1. Guardar una instantánea del proyecto al montar el componente
     val project = remember(projectId) {
         SessionManager.selectedUserProfile?.projects?.find { it.project.id == projectId }
+    }
+    // 2. Estado para controlar si la pantalla está realmente activa
+    var isActive by remember { mutableStateOf(true) }
+
+    // 3. Cuando la pantalla se desmonte, marcarla como inactiva
+    DisposableEffect(Unit) {
+        onDispose {
+            isActive = false
+        }
     }
 
     Box(
@@ -716,7 +746,7 @@ fun SelectedProjectScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp),
+                    .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -762,7 +792,7 @@ fun SelectedProjectScreen(
                     )
 
                     Text(
-                        text = "Updated At:\n${project.updatedAt}",
+                        text = "Updated At:\n${formatDate(project.updatedAt)}",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Medium,
                         textAlign = TextAlign.Center,
@@ -770,7 +800,7 @@ fun SelectedProjectScreen(
                     )
                 }
             }
-        } else {
+        } else if (isActive) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
@@ -796,11 +826,12 @@ fun SelectedProjectScreen(
         }
 
         // BOTON ATRAS
-        ButtonBack(
+        ButtonBackProjects(
             navController = navController,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .offset(16.dp, 50.dp)
+                .offset(16.dp, 16.dp)
+                .padding(top = 30.dp),
         )
     }
 }
@@ -1095,6 +1126,56 @@ fun VerticalSkillItem(name: String, percentage: Int) {
     }
 }
 
+@Composable
+fun UserNotFoundScreen(navController: NavController, viewModel: ProfileViewModel) {
+    MaterialTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Yellow)
+                .systemBarsPadding()
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Mensaje de error
+                Text(
+                    text = "USER NOT FOUND",
+                    color = Color.Black,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "The user you searched for doesn't exist or couldn't be found.",
+                    color = Color.Black,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp)
+                )
+            }
+
+            // Botón para volver
+            ButtonBack(
+                navController = navController,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset(16.dp, 16.dp),
+                onBackClick = {
+                    viewModel.clearSearch()
+                    navController.popBackStack()
+                }
+            )
+        }
+    }
+}
+
 //-------------------------//REUTILIZABLES//---------------------------//
 
 @Composable
@@ -1122,6 +1203,37 @@ fun ButtonBack(
                 modifier = Modifier.size(56.dp)
             )
         }
+    }
+}
+
+@Composable
+fun ButtonBackProjects(
+    navController: NavController,
+    modifier: Modifier = Modifier,
+    onBackClick: (() -> Unit)? = null
+) {
+    Box(
+        modifier = modifier
+            .size(60.dp)
+            .background(
+                color = Color.Black,
+                shape = CircleShape
+            )
+            .clickable {
+                onBackClick?.invoke() ?: run {
+                    navController.navigate("projects") {
+                        popUpTo("projects") { inclusive = false }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowLeft,
+            contentDescription = "Back to Projects",
+            tint = Color(0xFFFFFC00),
+            modifier = Modifier.size(56.dp)
+        )
     }
 }
 
@@ -1184,6 +1296,17 @@ fun SearchField(
                 tint = if (value.isNotEmpty()) Color.Yellow else Color.Gray
             )
         }
+    }
+}
+
+fun formatDate(isoString: String): String {
+    return try {
+        val instant = Instant.parse(isoString)
+        val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+            .withZone(ZoneId.systemDefault())
+        formatter.format(instant)
+    } catch (e: Exception) {
+        isoString
     }
 }
 

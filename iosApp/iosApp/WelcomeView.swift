@@ -38,9 +38,13 @@ struct WelcomeView: View {
         }
         .navigationBarHidden(true)
         .onChange(of: viewModel.searchState) { newState in
-            if case .success = newState {
-                // Navigate to profile view when search succeeds
+            switch newState {
+            case .success:
                 navigationPath.append("profile")
+            case .error:
+                navigationPath.append("user_not_found")
+            default:
+                break
             }
         }
         .onAppear {

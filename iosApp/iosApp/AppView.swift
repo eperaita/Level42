@@ -34,6 +34,8 @@ struct AppView: View {
                     ProjectsView(navigationPath: $navigationPath)
                 case "skills":
                     SkillsView(navigationPath: $navigationPath)
+                case "user_not_found":
+                    UserNotFoundView(navigationPath: $navigationPath)
                 default:
                     LoginView(navigationPath: $navigationPath)
                 }
@@ -97,8 +99,13 @@ struct AppView: View {
     
     private func handleSearchStateChange(_ state: ProfileViewModel.SearchState) {
         DispatchQueue.main.async {
-            if case .success = state {
+            switch state {
+            case .success:
                 navigationPath.append("profile")
+            case .error:
+                navigationPath.append("user_not_found")
+            default:
+                break
             }
         }
     }
