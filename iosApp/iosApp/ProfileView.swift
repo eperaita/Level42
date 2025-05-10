@@ -8,11 +8,21 @@ struct ProfileView: View {
     var body: some View {
         // Protección contra perfil nulo
         if SessionManager.shared.selectedUserProfile == nil {
-            EmptyView()
-                .onAppear {
+            VStack {
+                Text("No user profile selected")
+                    .foregroundColor(.white)
+                Button("Go back to Welcome") {
                     navigationPath.removeLast(navigationPath.count)
-                    navigationPath.append("login")
+                    navigationPath.append("welcome")
                 }
+                .padding()
+                .foregroundColor(Color(red: 1.0, green: 0.988, blue: 0.0))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black)
+            .onAppear {
+                print("[PROFILEVIEW] No user profile selected")
+            }
         } else {
             ZStack {
                 Color.black.ignoresSafeArea()
@@ -25,13 +35,18 @@ struct ProfileView: View {
                 
                 ButtonBack(action: {
                     viewModel.clearSearch()
-                    navigationPath.append("welcome")
+                    SessionManager.shared.selectedUserProfile = nil
+                    navigationPath.removeLast()
                 })
                 .position(x: 30, y: 50)
+                .padding(.top, 50)
             }
             .edgesIgnoringSafeArea(.all)
             .navigationBarBackButtonHidden(true)
             .navigationBarHidden(true)
+            .onAppear {
+                print("[PROFILEVIEW] Displaying profile for: \(SessionManager.shared.selectedUserProfile?.login ?? "unknown")")
+            }
         }
     }
 }
@@ -151,8 +166,9 @@ struct ButtonBack: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
+                .font(.system(size: 24, weight: .bold))
                 .foregroundColor(Color(red: 1.0, green: 0.988, blue: 0.0))
-                .padding()
+                .frame(width: 50, height: 50)
                 .background(Color.black)
                 .clipShape(Circle())
         }

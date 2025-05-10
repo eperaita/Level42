@@ -5,7 +5,7 @@ struct LoadingView: View {
     @EnvironmentObject private var viewModel: ProfileViewModel
     @Binding var navigationPath: NavigationPath
     @State private var showTimeoutMessage = false
-    private let timeoutDuration: Double = 30 // 30 segundos 
+    private let timeoutDuration: Double = 60
 
     var body: some View {
         ZStack {
@@ -47,21 +47,24 @@ struct LoadingView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + timeoutDuration) {
             if case .idle = viewModel.authState {
                 showTimeoutMessage = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    navigationPath.removeLast()
-                    navigationPath.append("login")
-                }
+                // NO redirigimos a login automáticamente
             }
         }
     }
 
     private func handleAuthStateChange(_ state: ProfileViewModel.AuthState) {
-        if case .success = state {
-            navigationPath.removeLast()
-            navigationPath.append("welcome")
-        } else if case .error = state {
-            navigationPath.removeLast()
-            navigationPath.append("login")
+        DispatchQueue.main.async {
+            switch state {
+            case .success:
+                navigationPath.removeLast(navigationPath.count)
+                navigationPath.append("welcome")
+            case .error(let message):
+                print("Auth error: \(message)")
+                navigationPath.removeLast(navigationPath.count)
+                navigationPath.append("login")
+            default:
+                break
+            }
         }
     }
 }

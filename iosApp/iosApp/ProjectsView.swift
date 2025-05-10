@@ -12,7 +12,7 @@ struct ProjectsView: View {
         ZStack {
             // Fondo amarillo
             customYellow.ignoresSafeArea()
-
+            
             // Contenido principal
             Group {
                 if case .loading = viewModel.projectsState {

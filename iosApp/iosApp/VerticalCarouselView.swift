@@ -86,7 +86,9 @@ struct VerticalCarouselView: View {
     // Vista para el elemento seleccionado
     private func selectedProjectView(_ project: Project) -> some View {
         Button(action: {
-            navigationPath.append(project)
+            print("[VerticalCarouselView] Navigating to project: \(project)")
+            let projectId = Int(project.project.id) // Convertimos Int32 → Int
+            navigationPath.append(ProjectID(value: projectId))
         }) {
             VStack(spacing: 4) {
                 Text(project.project.name)

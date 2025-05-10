@@ -27,6 +27,7 @@ struct WelcomeView: View {
                 // Search Section
                 searchSection
                     .padding(.bottom, 32)
+                    .padding(.top, 160)
             }
             .padding(.horizontal, 16)
             
@@ -36,6 +37,19 @@ struct WelcomeView: View {
             }
         }
         .navigationBarHidden(true)
+        .onChange(of: viewModel.searchState) { newState in
+            if case .success = newState {
+                // Navigate to profile view when search succeeds
+                navigationPath.append("profile")
+            }
+        }
+        .onAppear {
+            print("[WELCOME] Logged as : \(SessionManager.shared.user_login ?? "unknown")")
+            print("[WELCOME] No selecteduser: \(SessionManager.shared.selectedUserProfile?.login ?? "unknown")")
+            if SessionManager.shared.selectedUserProfile == nil {
+                searchQuery = ""  // Limpia el campo si no hay perfil seleccionado
+            }
+        }
     }
     
     // MARK: - Componentes
@@ -68,9 +82,12 @@ struct WelcomeView: View {
     
     private var searchSection: some View {
         VStack(spacing: 24) {
-            // Search Field - Corregido
+            // Search Field
             HStack {
                 TextField("Search user...", text: $searchQuery)
+                    .autocapitalization(.none)
+                    .disableAutocorrection(true)
+                    .textInputAutocapitalization(.never)
                     .foregroundColor(.white)
                     .padding(8)
                     .background(

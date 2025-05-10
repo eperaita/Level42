@@ -48,7 +48,8 @@ class ProfileViewModel: ObservableObject {
                                     
                     self.updateAuthState(.success(authData: authData))
                                     
-                    print("[VIEWMODEL]: Logged as: \(SessionManager.shared.user_login ?? ""), id: \(SessionManager.shared.user_id ?? 0)")
+                    let userId = SessionManager.shared.user_id?.int32Value ?? -1
+                    print("[VIEWMODEL]: Logged as: \(SessionManager.shared.user_login ?? ""), id: \(userId)")
                 }
                 
             } catch {

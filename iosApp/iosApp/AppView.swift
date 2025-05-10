@@ -1,4 +1,9 @@
 import SwiftUI
+import shared
+
+struct ProjectID: Hashable, Codable {
+    let value: Int
+}
 
 struct AppView: View {
 
@@ -33,6 +38,10 @@ struct AppView: View {
                     LoginView(navigationPath: $navigationPath)
                 }
             }
+            .navigationDestination(for: ProjectID.self) { id in
+                SelectedProjectView(projectId: id.value, navigationPath: $navigationPath)
+            }
+            
         }
         //Esto es para recoger el callback  - en Android lo recoge Mainactivity
         .onOpenURL { url in handleIncomingURL(url) }
@@ -52,6 +61,11 @@ struct AppView: View {
                    Text(message)
                }
            })
+    }
+    
+    // Función auxiliar para encontrar el proyecto
+    private func findProjectById(_ id: Int) -> Project? {
+        return SessionManager.shared.selectedUserProfile?.projects.first { $0.project.id == id }
     }
 
     func handleIncomingURL(_ url: URL) {
